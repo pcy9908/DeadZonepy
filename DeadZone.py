@@ -20,29 +20,22 @@ LIGHT_BLUE = (173, 216, 230)
 BLACK = (0, 0, 0)
 
 # 게임 변수 초기화
-block_size = 50
+block_size = 100
 grid_rows, grid_cols = HEIGHT // block_size, WIDTH // block_size
 current_screen = "start"  # 시작 화면에서 시작
 
 # 적 경로 설정 (기본 루트)
 path_coords = [
-    (6, 1), (7, 1), (8, 1), (9, 1), (10, 1), (11, 1), (12, 1),
-    (12, 2), (12, 3), (11, 3), (10, 3), (9, 3), (8, 3), (7, 3), (6, 3),
-    (6, 4), (6, 5), (7, 5), (8, 5), (9, 5), (10, 5), (11, 5), (12, 5),
-    (12, 6), (12, 7), (11, 7), (10, 7), (9, 7), (8, 7), (7, 7), (6, 7),
-    (6, 8), (6, 9), (7, 9), (8, 9), (9, 9), (10, 9), (11, 9), (12, 9),
-    (12, 10), (12, 11), (11, 11), (10, 11), (9, 11), (8, 11), (7, 11), (6, 11),
-    (6, 12)
+    (1, 0), (1, 6), (5, 6), (5, 1), (8, 1), (8, 6), (12, 6), (12, 3)
 ]
-path_coords = [(col + 5, row+1) for col, row in path_coords]  # 좌표 보정
 
 # 이미지 로드 및 크기 조정
 start_bg = pygame.image.load("startpage.png")
 start_button = pygame.image.load("startButton.png")
 start_button = pygame.transform.scale(start_button, (300, 254))
-top_ui = pygame.image.load('r_ui4.png')
-side_ui = pygame.image.load("r_ui5.png")
-bottom_ui = pygame.image.load("r_ui3.png")
+top_ui = pygame.image.load('ui4.png')
+side_ui = pygame.image.load("ui5.png")
+bottom_ui = pygame.image.load("ui3.png")
 # 타워 관련 이미지
 gun_tower = pygame.image.load("gun_tower.png")
 mine_tower = pygame.image.load("mine_tower.png")
