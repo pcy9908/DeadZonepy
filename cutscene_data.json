@@ -1,0 +1,42 @@
+{
+    "11" :[
+        {
+            "image" :"scene1.jfif",
+            "text" : "신종 마약이 사람들 사이에서 유행을 하게 된다.."
+        },
+        {
+            "image" :"scene1.jfif",
+            "text" : "이 마약의 부작용은 폭력성이 강해지고,"
+        }
+    ],
+    "21" :[
+        {
+            "image" :"scene1.jfif",
+            "text" : "20"
+        },
+        {
+            "image" :"scene1.jfif",
+            "text" : "2323543"
+        }
+    ],
+    "31" :[
+        {
+            "image" :"scene1.jfif",
+            "text" : "30."
+        },
+        {
+            "image" :"scene1.jfif",
+            "text" : "3.3"
+        }
+    ],
+    "41" :[
+        {
+            "image" :"scene1.jfif",
+            "text" : "40."
+        },
+        {
+            "image" :"scene1.jfif",
+            "text" : "41"
+        }
+    ]
+}
