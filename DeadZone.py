@@ -1,5 +1,6 @@
 import pygame
 import sys
+import random
 
 # 게임 초기 설정
 pygame.init()
@@ -26,7 +27,13 @@ current_screen = "start"  # 시작 화면에서 시작
 
 # 적 경로 설정 (기본 루트)
 path_coords = [
-    (1, 0), (1, 6), (5, 6), (5, 1), (8, 1), (8, 6), (12, 6), (12, 3)
+    (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6),
+    (2, 6), (3, 6), (4, 6), (5, 6),
+    (5, 5), (5, 4), (5, 3), (5, 2), (5, 1),
+    (6, 1), (7, 1), (8, 1),
+    (8, 2), (8, 3), (8, 4), (8, 5), (8, 6),
+    (9, 6), (10, 6), (11, 6), (12, 6),
+    (12, 5), (12, 4), (12, 3)
 ]
 
 # 이미지 로드 및 크기 조정
@@ -39,7 +46,14 @@ bottom_ui = pygame.image.load("ui3.png")
 # 타워 관련 이미지
 gun_tower = pygame.image.load("gun_tower.png")
 mine_tower = pygame.image.load("mine_tower.png")
+m_bg_s1 = pygame.image.load("block1.png")
+m_bg_s2 = pygame.image.load("block2.png")
+m_bg_s3 = pygame.image.load("block3.png")
+m_bg_s4 = pygame.image.load("block4.png")
+e_block = pygame.image.load("e_block.png")
+tile_image = [m_bg_s1, m_bg_s2, m_bg_s3, m_bg_s4]
 
+tile_map = [[random.choice(tile_image) for _ in range(16)] for _ in range(9)]
 # 이벤트 정의
 ENEMY_SPAWN_EVENT = pygame.USEREVENT + 1
 pygame.time.set_timer(ENEMY_SPAWN_EVENT, 10000)
@@ -197,11 +211,17 @@ def draw_start_screen():
     screen.blit(start_button, button_rect.topleft)
     return button_rect
 
+def draw_tiles():
+    """화면 타일 그리기"""
+    for row in range(9):
+        for col in range(16):
+            tile_x = col * block_size
+            tile_y = row * block_size
+            screen.blit(tile_map[row][col], (tile_x, tile_y))
 
 def draw_game_screen():
     """게임 화면 그리기"""
-    screen.fill(WHITE)
-    draw_grid()
+    draw_tiles()
     draw_path()
     screen.blit(bottom_ui, (0 ,750))
 
@@ -218,7 +238,8 @@ def draw_path():
     """적 경로 그리기"""
     for col, row in path_coords:
         x1, y1 = col * block_size, row * block_size
-        pygame.draw.rect(screen, DARK_GRAY, (x1, y1, block_size, block_size))
+        screen.blit(e_block, (x1, y1, block_size, block_size))
+
 def draw_hud():
     """우상단에 웨이브, 골드, 라이프, 다음 웨이브까지 남은 시간 표시"""
     hud_padding = 30  # 각 텍스트 간 기본 간격
@@ -260,9 +281,10 @@ def handle_wave_logic():
     if wave_pause:
         remaining_time = pygame.time.get_ticks() - wave_pause_timer
         if remaining_time >= wave_pause_duration:  # 대기 시간이 끝난 경우
-            wave_pause = False
-            wave += 1
-            enemies_spawned = 0
+            wave_pause = False  # 대기 상태 종료
+            wave_pause_timer = 0  # 대기 타이머 초기화
+            wave += 1  # 다음 웨이브로 진행
+            enemies_spawned = 0  # 생성된 적 수 초기화
             last_spawn_time = pygame.time.get_ticks()  # 적 생성 시작 시간 초기화
             print(f"Wave {wave} 시작!")  # 디버깅 메시지
         return  # 대기 중에는 더 이상 진행하지 않음
@@ -282,7 +304,7 @@ def handle_wave_logic():
 
     # 좀비 모두 제거 후 대기 상태로 전환
     if enemies_spawned == max_enemies_per_wave:
-        if not enemies:  # 적 리스트가 비어 있으면 (모든 적이 죽었음)
+        if not enemies:  # 적 리스트가 비어 있으면 (모든 적이 제거됨)
             if wave_pause_timer == 0:  # 대기 타이머가 설정되지 않은 경우
                 wave_pause_timer = pygame.time.get_ticks()  # 대기 타이머 시작
                 wave_pause = True
@@ -310,10 +332,15 @@ def draw_tower_ui():
         y_offset += 100 + 50  # 이미지 높이(100) + 텍스트 높이 및 간격(50)
 
 
-# 타워 UI와 드래그/드롭 이벤트 처리
 def handle_tower_ui_events(event):
     """타워 UI와 드래그 앤 드롭 이벤트를 처리합니다."""
     global selected_tower, gold
+
+    # 화면 크기와 설치 가능 영역 정의
+    INSTALLABLE_AREA = pygame.Rect(0, 0, 1300, 700)  # 설치 가능한 영역 (1300x700)
+
+    # 경로 영역 정의
+    path_blocks = [(x * block_size, y * block_size) for x, y in path_coords]  # 경로를 픽셀 좌표로 변환
 
     if event.type == pygame.MOUSEBUTTONDOWN:
         mouse_x, mouse_y = event.pos
@@ -332,11 +359,19 @@ def handle_tower_ui_events(event):
         grid_x = (mouse_x // block_size) * block_size
         grid_y = (mouse_y // block_size) * block_size
 
-        # 타워 UI 영역 밖에서만 설치 가능
-        if grid_x > tower_ui_width and (grid_x, grid_y) not in [(tower.x, tower.y) for tower in towers]:
-            # 타워 설치
-            towers.append(Tower(grid_x, grid_y, selected_tower["type"]))
-            gold -= selected_tower["cost"]  # 비용 차감
+        # 설치 가능한 영역과 경로 체크
+        if INSTALLABLE_AREA.collidepoint(mouse_x, mouse_y):  # 드롭 위치가 설치 가능 영역인지 확인
+            if (grid_x, grid_y) not in path_blocks:  # 경로 위에 설치되지 않도록 확인
+                if (grid_x, grid_y) not in [(tower.x, tower.y) for tower in towers]:  # 타워 중복 설치 방지
+                    towers.append(Tower(grid_x, grid_y, selected_tower["type"]))  # 타워 설치
+                    gold -= selected_tower["cost"]  # 비용 차감
+                else:
+                    print("중복 설치 불가")
+            else:
+                print("경로 위에는 설치할 수 없습니다.")  # 디버깅 메시지
+        else:
+            print("설치 불가능한 영역입니다.")  # 디버깅 메시지
+
         selected_tower = None  # 선택된 타워 초기화
 
 
