@@ -25,6 +25,7 @@ optimize_images(image)
 
 # 색상 정의
 WHITE = (255, 255, 255)
+RED = (255, 0, 0)
 GRAY = (160, 160, 160)
 DARK_GRAY = (96, 96, 96)
 LIGHT_RED = (255, 160, 122)
@@ -82,6 +83,8 @@ Nanum = "fonts/NanumGothicBold.ttf"
 font = pygame.font.Font(None, 36)
 font12 = pygame.font.Font(Nanum, 12)  # None은 기본 폰트, 36은 폰트 크기
 font20 = pygame.font.Font(Nanum, 20)
+font20b = pygame.font.Font(Nanum, 20)
+font20b.set_bold(True)
 font22 = pygame.font.Font(Nanum, 22)
 font24 = pygame.font.Font(Nanum, 24)
 font36 = pygame.font.Font(Nanum, 36)
@@ -540,14 +543,23 @@ def draw_selected_tower_info(selected_tower):
     # 승급 버튼
     button_width, button_height = 140, 50
     upgrade_button_rect = pygame.Rect(stats_x + 200, info_y, button_width, button_height)
-    pygame.draw.rect(screen, (255, 69, 0), upgrade_button_rect, border_radius=10)
-    pygame.draw.rect(screen, (139, 0, 0), upgrade_button_rect, 3, border_radius=10)
 
-    upgrade_text = font24.render("승급", True, WHITE)
+    # 버튼 배경 이미지
+    button_image = pygame.transform.scale(image["bottom_bg_ui"], (button_width, button_height))
+
+    # 버튼 배경 이미지 그리기
+    screen.blit(button_image, upgrade_button_rect.topleft)
+
+    # 버튼 텍스트
+    upgrade_text = font24.render("승급", True, RED)
     text_rect = upgrade_text.get_rect(center=upgrade_button_rect.center)
+
+    # 텍스트를 버튼 배경 위에 그리기
     screen.blit(upgrade_text, text_rect)
 
+    # 버튼 사각형 반환
     return upgrade_button_rect
+ 
 
 
 def draw_tower_range(selected_tower):
@@ -573,8 +585,7 @@ def handle_upgrade_event(selected_tower, mouse_pos, upgrade_button_rect):
             print(f"승급 완료! 타워 레벨: {getattr(selected_tower, 'level', 1)}")
         else:
             print(f"골드가 부족합니다. 필요 골드: {upgrade_cost}")
-            
-          
+                     
 def upgrade_tower(tower):
     """타워 승급 로직"""
     global gold
@@ -702,7 +713,6 @@ def handle_wave_logic():
                 wave_pause_duration = 1000  # 웨이브 종료 후 5초 대기
                 print("모든 적 제거됨. 다음 웨이브 대기 5초 시작.")
 
-
 def handle_tower_selection(mouse_pos):
     global selected_tower_ui
     for tower in towers:
@@ -716,7 +726,6 @@ def handle_tower_selection(mouse_pos):
     selected_tower_ui = None
     print("타워 선택 해제")
     
-
 def draw_tower_ui():
     """화면 왼쪽에 타워 선택 UI를 그립니다."""
     # 배경 이미지 그리기
@@ -727,14 +736,15 @@ def draw_tower_ui():
     for tower in TOWER_TYPES:
         # 타워 이미지 로드 및 크기 조정
         tower_image = pygame.image.load(tower["image_path"]).convert_alpha()
-        tower_image = pygame.transform.scale(tower_image, (200, 100))
+        tower_image = pygame.transform.scale(tower_image, (100, 100))
 
         # 타워 이미지 그리기
-        screen.blit(tower_image, (tower_ui_rect.x + 40, y_offset))
-
+        screen.blit(tower_image, (tower_ui_rect.x + 90, y_offset))
+        screen.blit(image["side_bg_ui"], (tower_ui_rect.x + 30, y_offset + 110))
         # 타워 이름과 비용 텍스트를 이미지 바로 아래에 표시
-        tower_text = font22.render(f"{tower['name']} (${tower['cost']})", True, BLACK)
-        screen.blit(tower_text, (tower_ui_rect.x + 40, y_offset + 110))  # 이미지 아래 10px 간격
+        tower_text = font20b.render(f"{tower['name']} (${tower['cost']})", True, BLACK)
+        text_rect = tower_text.get_rect(center=(tower_ui_rect.x + 145, y_offset + 130))  # 배경 중앙에 텍스트 정렬
+        screen.blit(tower_text, text_rect.topleft)
 
         y_offset += 100 + 50  # 이미지 높이(100) + 텍스트 높이 및 간격(50)
 
