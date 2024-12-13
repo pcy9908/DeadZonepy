@@ -15,6 +15,8 @@ def load_images():
         "boss4": pygame.image.load("boss4.png"),
         "top_ui": pygame.image.load("ui4.png"),
         "side_ui": pygame.image.load("ui5.png"),
+        "side_bg_ui": pygame.transform.scale(pygame.image.load("silver_bg_ui.png"), (220, 40)),
+        "bottom_bg_ui": pygame.transform.scale(pygame.image.load("gold_bg_ui.png"), (250, 40)),
         "bottom_ui": pygame.image.load("ui3.png"),
         "basecamp":  pygame.transform.scale(pygame.image.load("basecamp.png"), (250, 300)),       
         #gun
