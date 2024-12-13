@@ -37,6 +37,21 @@ class CutsceneManager:
             print(f"컷씬 파일 {file_path}의 JSON 구문 오류.")
             self.cutscenes = []
 
+    def has_cutscene_for_wave(self, wave):
+        """
+        특정 웨이브에 대해 컷씬 데이터가 존재하는지 확인
+        """
+        try:
+            with open("cutscene_data.json", "r", encoding="utf-8") as f:
+                all_cutscenes = json.load(f)
+            return str(wave) in all_cutscenes  # 해당 웨이브가 컷씬 데이터에 있는지 확인
+        except FileNotFoundError:
+            print("컷씬 데이터 파일을 찾을 수 없습니다.")
+            return False
+        except json.JSONDecodeError:
+            print("컷씬 데이터 파일의 JSON 구문 오류.")
+            return False
+
     def draw_cutscene(self):
         """
         현재 컷씬을 화면에 그리는 메서드
