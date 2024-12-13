@@ -1,6 +1,8 @@
 import pygame
 import sys
 import random
+import math
+import time
 from file_loader import load_images, optimize_images, load_audio
 from cutscene import CutsceneManager
 
@@ -63,11 +65,11 @@ pygame.time.set_timer(ENEMY_SPAWN_EVENT, 10000)
 # 글로벌 변수 초기화
 enemies = []  # 적 리스트
 towers = []  # 타워 리스트
-gold = 100  # 초기 자원
-life = 10  # 초기 생명
+gold = 1000  # 초기 자원
+life = 1  # 초기 생명
 wave = 0  # 초기 웨이브
 enemies_spawned = 0  # 현재 웨이브에서 생성된 적 수
-max_enemies_per_wave = 40  # 웨이브당 적 최대 수
+max_enemies_per_wave = 1 # 웨이브당 적 최대 수
 enemy_spawn_interval = 1000  # 적 스폰 간격 (밀리초, 더 빠르게)
 last_spawn_time = 0  # 마지막 적 생성 시간
 wave_pause = False  # 웨이브 대기 상태
@@ -166,118 +168,242 @@ class Enemy:
         pygame.draw.rect(screen, DARK_GRAY, (self.x, self.y - 10, health_bar_width, 5))  # 배경 바
         pygame.draw.rect(screen, LIGHT_RED, (self.x, self.y - 10, health_bar_width * health_ratio, 5))  # 현재 체력 바
 
-
-    @staticmethod
-    def handle_wave_upgrades():
-        """웨이브가 진행될 때마다 적 체력과 이동 속도 증가"""
-        global enemies
-        for enemy in enemies:
-            enemy.health += 25  # 적 체력 증가
-            enemy.speed += 0.2  # 적 이동 속도 약간 증가
-
 class BossEnemy(Enemy):
     """보스 좀비 클래스"""
-    def __init__(self, path_coords, speed=2, health=1000):
-        super().__init__(path_coords, speed, health, )
-        self.image = image["boss1"]
-        self.image = pygame.transform.scale(self.image, (block_size * 1.2, block_size * 1.2))  # 보스는 더 큰 크기로 표시
+    def __init__(self, path_coords, boss_type, health_increment=0):
+        """
+        :param path_coords: 적의 경로
+        :param boss_type: 보스 타입 (1~4)
+        :param health_increment: 웨이브에 따른 체력 증가량
+        """
+        base_health = [800, 1200, 1600, 2000][boss_type - 1]  # 보스 기본 체력
+        health = base_health + health_increment  # 기본 체력 + 추가 체력
+        speed = [2.0, 1.8, 1.6, 1.5][boss_type - 1]
+        super().__init__(path_coords, speed, health)
+        self.type = boss_type
+        self.image = image[f"boss{boss_type}"]
+        self.image = pygame.transform.scale(self.image, (block_size * 1.5, block_size * 1.5))
+        self.cooldowns = {
+            "heal_nearby": 0,  # 1단계 능력 쿨타임
+            "stun_towers": 0,  # 2단계 능력 쿨타임
+            "heal_area": 0     # 3단계 능력 쿨타임
+        }
 
-    def take_damage(self, damage):
-        """보스는 피해를 입을 때 추가 효과"""
-        super().take_damage(damage)
-        if not self.alive:
-            print("보스 좀비가 사망했습니다!")
+    def update(self, enemies, towers):
+        """보스 특수 능력 실행"""
+        for key in self.cooldowns:
+            if self.cooldowns[key] > 0:
+                self.cooldowns[key] -= 1
+
+        if self.type >= 1 and self.cooldowns["heal_nearby"] == 0:
+            self._heal_nearby_enemies(enemies, 10)  # 체력 10% 회복
+            self.cooldowns["heal_nearby"] = 600  # 10초 쿨타임
+
+        if self.type >= 2 and self.cooldowns["stun_towers"] == 0:
+            self._stun_towers(towers, 2, 120)  # 타워 2개를 2초 스턴
+            self.cooldowns["stun_towers"] = 720  # 12초 쿨타임
+
+        if self.type >= 3 and self.cooldowns["heal_area"] == 0:
+            self._heal_area_enemies(enemies, 30, 2)  # 2칸 범위 내 체력 30% 회복
+            self.cooldowns["heal_area"] = 600  # 10초 쿨타임
+
+    def _heal_nearby_enemies(self, enemies, percentage):
+        """주변 적 체력 회복"""
+        for enemy in enemies:
+            dist = math.sqrt((self.x - enemy.x) ** 2 + (self.y - enemy.y) ** 2)
+            if dist <= block_size * 3:  # 3칸 내
+                heal_amount = enemy.max_health * (percentage / 100)
+                enemy.health = min(enemy.max_health, enemy.health + heal_amount)
+                print(f"보스({self.type})가 {enemy} 체력을 {heal_amount:.0f} 회복시켰습니다.")
+
+    def _stun_towers(self, towers, count, duration):
+        """타워 스턴"""
+        for tower in random.sample(towers, min(len(towers), count)):
+            tower.cooldown += duration
+            print(f"보스({self.type})가 타워 {tower}를 {duration // 60}초간 스턴시켰습니다.")
+
+    def _heal_area_enemies(self, enemies, percentage, range_blocks):
+        """범위 내 적 체력 회복"""
+        for enemy in enemies:
+            dist = math.sqrt((self.x - enemy.x) ** 2 + (self.y - enemy.y) ** 2)
+            if dist <= block_size * range_blocks:  # 범위 내
+                heal_amount = enemy.max_health * (percentage / 100)
+                enemy.health = min(enemy.max_health, enemy.health + heal_amount)
+                print(f"보스({self.type})가 범위 내 {enemy} 체력을 {heal_amount:.0f} 회복시켰습니다.")
 
 class SpecialEnemy(Enemy):
     """특수 좀비 클래스"""
-    def __init__(self, path_coords, speed=3, health=200):
+    def __init__(self, path_coords, special_type):
+        health = [200, 250, 300, 350][special_type - 1]
+        speed = [3.0, 2.8, 2.6, 2.5][special_type - 1]
         super().__init__(path_coords, speed, health)
-        self.image = image["s_enemy"]
-        self.image = pygame.transform.scale(self.image, (block_size, block_size))  # 일반 좀비 크기
+        self.type = special_type
+        self.image = image[f"s_enemy{special_type}"]
+        self.image = pygame.transform.scale(self.image, (block_size, block_size))
+        self.cooldowns = {
+            "boost_speed": 0,  # 1번 능력 쿨타임
+            "stun_towers": 0,  # 2번 능력 쿨타임
+            "heal_area": 0     # 3번 능력 쿨타임
+        }
 
-    def boost_nearby_enemies(self, enemies):
-        """특수 능력: 주변 1칸 내의 좀비 속도 증가"""
+    def update(self, enemies, towers):
+        """특수 좀비 능력 실행"""
+        for key in self.cooldowns:
+            if self.cooldowns[key] > 0:
+                self.cooldowns[key] -= 1
+
+        if self.type >= 1 and self.cooldowns["boost_speed"] == 0:
+            self._boost_nearby_speed(enemies, 0.3)  # 이동 속도 30% 증가
+            self.cooldowns["boost_speed"] = 300  # 5초 쿨타임
+
+        if self.type >= 2 and self.cooldowns["stun_towers"] == 0:
+            self._stun_nearby_towers(towers, 2, 60)  # 타워 2개를 1초 스턴
+            self.cooldowns["stun_towers"] = 480  # 8초 쿨타임
+
+        if self.type >= 3 and self.cooldowns["heal_area"] == 0:
+            self._heal_area_enemies(enemies, 20, 2)  # 2칸 범위 내 체력 20% 회복
+            self.cooldowns["heal_area"] = 420  # 7초 쿨타임
+
+    def _boost_nearby_speed(self, enemies, boost_amount):
+        """주변 적 이동 속도 증가"""
         for enemy in enemies:
-            if enemy is not self:  # 자기 자신은 제외
-                dist = ((enemy.x - self.x) ** 2 + (enemy.y - self.y) ** 2) ** 0.5
-                if dist <= block_size:  # 1칸 내
-                    enemy.speed += 0.5  # 속도 증가
-                    print(f"특수 좀비가 {enemy}의 속도를 증가시켰습니다!")        
+            dist = math.sqrt((self.x - enemy.x) ** 2 + (self.y - enemy.y) ** 2)
+            if dist <= block_size:  # 1칸 내
+                enemy.speed += boost_amount
+                print(f"특수 좀비({self.type})가 {enemy}의 속도를 {boost_amount * 100:.0f}% 증가시켰습니다.")
 
-# Tower 클래스
+    def _stun_nearby_towers(self, towers, count, duration):
+        """주변 타워 스턴"""
+        for tower in random.sample(towers, min(len(towers), count)):
+            tower.cooldown += duration
+            print(f"특수 좀비({self.type})가 타워 {tower}를 {duration // 60}초간 스턴시켰습니다.")
+
+    def _heal_area_enemies(self, enemies, percentage, range_blocks):
+        """범위 내 적 체력 회복"""
+        for enemy in enemies:
+            dist = math.sqrt((self.x - enemy.x) ** 2 + (self.y - enemy.y) ** 2)
+            if dist <= block_size * range_blocks:
+                heal_amount = enemy.max_health * (percentage / 100)
+                enemy.health = min(enemy.max_health, enemy.health + heal_amount)
+                print(f"특수 좀비({self.type})가 범위 내 {enemy} 체력을 {heal_amount:.0f} 회복시켰습니다.")
+ 
 class Tower:
     def __init__(self, x, y, tower_type):
-        # 타워 타입에 따라 속성을 정의
         if tower_type == "gun":
             self.range = 3 * block_size
             self.damage = 20
+            self.reload_time = 30
+            self.double_attack = False  # 더블 어택 기본값
+            self.image_key = "gun_tower"
             self.shot_sound = audio["gun_sound"]
             self.shot_sound.set_volume(0.02)
-            self.image_key = "gun_tower"
-            
+
         elif tower_type == "mine":
-            self.range = 2 * block_size
-            self.damage = 50
+            self.range = 3 * block_size  # 타워 사거리
+            self.damage = 70
+            self.reload_time = 10  # 공속 조정
+            self.explosion_range = block_size  # 폭발 범위 (1블럭)
+            self.image_key = "mine_tower"
             self.shot_sound = audio["mine_sound"]
             self.shot_sound.set_volume(0.02)
-            self.image_key = "mine_tower"
 
         elif tower_type == "supply":
             self.range = 2 * block_size
-            self.effect_duration = 300  # 보급 효과 지속 시간 (프레임 단위)
-            self.buff_amount = 10  # 버프량
-            self.reload_time = 0  # 공격 없음
+            self.buff_amount = 10
             self.image_key = "supply_tower"
+            self.effect_duration = 300  # 버프 지속 시간
+            self.reload_time = 0  # 공격하지 않음
 
         self.x, self.y = x, y
-        self.reload_time = 30  # 공격 딜레이 (프레임 단위)
-        self.cooldown = 0  # 현재 재장전 상태
+        self.cooldown = 0
+        self.level = 1  # 초기 레벨
         self.type = tower_type
-  
-        
+        self.angle = 0  # 기본 각도 (아래쪽을 바라봄)
+
     def draw(self):
-        """타워를 화면에 그리기"""
+        """타워를 화면에 그리기 (회전 포함)"""
         tower_image = image[self.image_key]
         tower_image = pygame.transform.scale(tower_image, (block_size, block_size))
-        screen.blit(tower_image, (self.x, self.y))
+        rotated_image = pygame.transform.rotate(tower_image, self.angle)
+        rotated_rect = rotated_image.get_rect(center=(self.x + block_size // 2, self.y + block_size // 2))
+        screen.blit(rotated_image, rotated_rect.topleft)
 
     def attack(self, enemies):
         """타워 공격 로직"""
         if self.cooldown == 0:
             if self.type == "gun":
-                # 총기 타워: 단일 타겟 공격
-                for enemy in enemies:
-                    dist = ((enemy.x - self.x) ** 2 + (enemy.y - self.y) ** 2) ** 0.5
-                    if dist <= self.range:
-                        enemy.take_damage(self.damage)
-                        self.shot_sound.play()
-                        self.cooldown = self.reload_time
-                        break  # 하나의 적만 공격
+                target_enemy = max(
+                    (enemy for enemy in enemies if self._is_in_range(enemy)),
+                    key=lambda e: e.health,
+                    default=None
+                )
+                if target_enemy:
+                    # 적과의 각도 계산 및 회전
+                    self.angle = self._calculate_angle_to_target(target_enemy)
+
+                    # 첫 번째 공격
+                    target_enemy.take_damage(self.damage)
+                    self.shot_sound.play()
+
+                    # 더블 어택 로직
+                    if self.double_attack:
+                        def second_attack():
+                            second_target = target_enemy
+                            if not second_target.alive:
+                                second_target = max(
+                                    (enemy for enemy in enemies if self._is_in_range(enemy) and enemy.alive),
+                                    key=lambda e: e.health,
+                                    default=None
+                                )
+                            if second_target:
+                                self.angle = self._calculate_angle_to_target(second_target)
+                                second_target.take_damage(self.damage)
+                                self.shot_sound.play()
+
+                        pygame.time.set_timer(pygame.USEREVENT + 2, 100, True)  # 100ms 딜레이
+                        pygame.event.post(pygame.event.Event(pygame.USEREVENT + 2, {"callback": second_attack}))
+                    
+                    self.cooldown = self.reload_time
+
             elif self.type == "mine":
-                # 지뢰 타워: 범위 공격
-                for enemy in enemies:
-                    dist = ((enemy.x - self.x) ** 2 + (enemy.y - self.y) ** 2) ** 0.5
-                    if dist <= self.range:
-                        for other_enemy in enemies:
-                            dist_to_other = ((other_enemy.x - self.x) ** 2 + (other_enemy.y - self.y) ** 2) ** 0.5
-                            if dist_to_other <= self.range:
-                                other_enemy.take_damage(self.damage)
-                        self.shot_sound.play()
-                        self.cooldown = self.reload_time
-                        break  # 범위 내 공격 후 종료
+                target_enemy = self._get_leading_enemy(enemies)
+                if target_enemy:
+                    self.angle = self._calculate_angle_to_target(target_enemy)
+                    target_enemy.take_damage(self.damage)
+                    self.shot_sound.play()
+                    for other_enemy in enemies:
+                        if self._is_within_explosion_range(target_enemy, other_enemy):
+                            explosion_damage = self.damage // getattr(self, "explosion_damage_reduction", 2)
+                            other_enemy.take_damage(explosion_damage)
+                    self.cooldown = self.reload_time
         else:
             self.cooldown -= 1
 
-    def provide_support(self):
-        """보급 타워의 버프 로직"""
-        for tower in towers:
-            if tower != self:  # 자신을 제외한 다른 타워
-                dist = ((tower.x - self.x) ** 2 + (tower.y - self.y) ** 2) ** 0.5
-                if dist <= self.range:
-                    if hasattr(tower, "damage"):
-                        tower.damage += self.buff_amount  # 공격력 버프량 추가
-                    if hasattr(tower, "reload_time"):
-                        tower.reload_time = max(10, tower.reload_time - 5)  # 재장전 시간 감소
+    def _calculate_angle_to_target(self, enemy):
+        """적과의 각도 계산 (기준: 아래쪽이 0도)"""
+        dx = enemy.x + block_size // 2 - (self.x + block_size // 2)
+        dy = enemy.y + block_size // 2 - (self.y + block_size // 2)
+        angle = -math.degrees(math.atan2(dy, dx))  # Pygame의 회전은 반시계 방향
+        return angle
+
+    def _is_in_range(self, enemy):
+        """적이 타워 사거리 내에 있는지 확인"""
+        dist = ((enemy.x - self.x) ** 2 + (enemy.y - self.y) ** 2) ** 0.5
+        return dist <= self.range
+
+    def _is_within_explosion_range(self, target_enemy, other_enemy):
+        """타겟 적 기준으로 폭발 범위 내에 있는지 확인"""
+        dist = ((target_enemy.x - other_enemy.x) ** 2 + (target_enemy.y - other_enemy.y) ** 2) ** 0.5
+        return dist <= self.explosion_range
+
+    def _get_leading_enemy(self, enemies):
+        """사거리 내에서 가장 앞에 있는 적을 반환"""
+        enemies_in_range = [
+            enemy for enemy in enemies if self._is_in_range(enemy)
+        ]
+        if not enemies_in_range:
+            return None
+        return max(enemies_in_range, key=lambda e: e.index)
 
 # 화면 그리기 함수
 def draw_start_screen():
@@ -299,6 +425,7 @@ def draw_game_screen():
     """게임 화면 그리기"""
     draw_tiles()
     draw_path()
+    screen.blit(image["basecamp"], (1100, 0))
     screen.blit(image["bottom_ui"], (0 ,750))
 
 def draw_path():
@@ -354,109 +481,167 @@ def draw_hud():
     for text in texts:
         screen.blit(text, (start_x + 30, start_y + y_offset))
         y_offset += hud_padding  # 다음 텍스트의 위치를 업데이트
-
+        
+        
 def draw_selected_tower_info(selected_tower):
     """선택된 타워의 정보를 하단 UI에 표시"""
     if selected_tower is None:
-        return  # 선택된 타워가 없으면 아무것도 표시하지 않음
+        return None
 
     # UI 위치 및 크기
     info_x, info_y = 400, 780
     image_size = 80
 
-    # 선택된 타워 이미지 표시
+    # 사거리 표시
+    draw_tower_range(selected_tower)
+
+    # 타워 이미지 표시
     tower_image = pygame.transform.scale(image[selected_tower.image_key], (image_size, image_size))
     screen.blit(tower_image, (info_x, info_y))
 
-    # 타워 정보 텍스트
-    stats_x = info_x + image_size + 20  # 텍스트를 오른쪽에 배치
+    # 타워 정보 표시
+    stats_x = info_x + image_size + 20
     stats_y = info_y
     text_lines = []
 
     if selected_tower.type == "supply":
-        # 보급 타워의 경우
+        # 지원 타워의 경우
         text_lines.append(f"타워 타입: {selected_tower.type.capitalize()}")
-        text_lines.append(f"레벨: {getattr(selected_tower, 'level', 1)}")  # 레벨 표시
-        text_lines.append(f"버프 공격력: +{selected_tower.buff_amount}")
-        text_lines.append(f"공속 개선: -5프레임")
+        text_lines.append(f"레벨: {getattr(selected_tower, 'level', 1)}")
+        text_lines.append(f"버프량: +{selected_tower.buff_amount} (공격력 증가)")
+        text_lines.append(f"사거리: {selected_tower.range // block_size}칸")
     else:
-        # 일반 타워의 경우
-        text_lines.append(f"타워 타입: {selected_tower.type.capitalize()}")
-        text_lines.append(f"레벨: {getattr(selected_tower, 'level', 1)}")  # 레벨 표시
-        
-        # 기본 공격력과 추가 공격력 표시
+        # 공격 타워의 경우
         buff_damage = sum(
-            tower.buff_amount for tower in towers if tower.type == "supply" and
+            tower.buff_amount
+            for tower in towers
+            if tower.type == "supply" and 
             ((tower.x - selected_tower.x) ** 2 + (tower.y - selected_tower.y) ** 2) ** 0.5 <= tower.range
         )
         attack_line = f"공격력: {selected_tower.damage}"
         if buff_damage > 0:
-            attack_line += f" (+{buff_damage})"  # 추가 공격력은 괄호로 표시
+            attack_line += f" (+{buff_damage})"
+        text_lines.append(f"타워 타입: {selected_tower.type.capitalize()}")
+        text_lines.append(f"레벨: {getattr(selected_tower, 'level', 1)}")
         text_lines.append(attack_line)
-
         text_lines.append(f"사거리: {selected_tower.range // block_size}칸")
         text_lines.append(f"공속: {selected_tower.reload_time}프레임")
 
-        # 공속 개선 표시
-        buff_reload = sum(
-            5 for tower in towers if tower.type == "supply" and
-            ((tower.x - selected_tower.x) ** 2 + (tower.y - selected_tower.y) ** 2) ** 0.5 <= tower.range
-        )
-        if buff_reload > 0:
-            text_lines.append(f"공속 개선: -{buff_reload}프레임")
-
     # 텍스트 렌더링
     for line in text_lines:
-        text_surface = font20.render(line, True, WHITE)
+        if "(+" in line:  # 추가 공격력 표시 텍스트
+            text_surface = font20.render(line, True, LIGHT_GREEN)
+        else:
+            text_surface = font20.render(line, True, WHITE)
         screen.blit(text_surface, (stats_x, stats_y))
         stats_y += 30
 
-    # 승급 버튼 추가
+    # 승급 버튼
     button_width, button_height = 140, 50
-    upgrade_button_rect = pygame.Rect(stats_x + 200, info_y, button_width, button_height)  # 텍스트 오른쪽에 위치
-    pygame.draw.rect(screen, (255, 69, 0), upgrade_button_rect, border_radius=10)  # 빨간색 버튼
-    pygame.draw.rect(screen, (139, 0, 0), upgrade_button_rect, 3, border_radius=10)  # 버튼 테두리
+    upgrade_button_rect = pygame.Rect(stats_x + 200, info_y, button_width, button_height)
+    pygame.draw.rect(screen, (255, 69, 0), upgrade_button_rect, border_radius=10)
+    pygame.draw.rect(screen, (139, 0, 0), upgrade_button_rect, 3, border_radius=10)
 
     upgrade_text = font24.render("승급", True, WHITE)
     text_rect = upgrade_text.get_rect(center=upgrade_button_rect.center)
     screen.blit(upgrade_text, text_rect)
 
-    # 승급 비용 표시
-    cost_text = font24.render("200 골드", True, WHITE)
-    screen.blit(cost_text, (upgrade_button_rect.x, upgrade_button_rect.y + 60))
+    return upgrade_button_rect
 
-    return upgrade_button_rect  # 승급 버튼 영역 반환
+
+def draw_tower_range(selected_tower):
+    """선택된 타워의 사거리를 원으로 표시"""
+    range_color = LIGHT_BLUE if selected_tower.type == "gun" else LIGHT_RED
+    pygame.draw.circle(
+        screen,
+        range_color,
+        (selected_tower.x + block_size // 2, selected_tower.y + block_size // 2),
+        selected_tower.range,
+        2  # 선의 두께
+    )
 
 def handle_upgrade_event(selected_tower, mouse_pos, upgrade_button_rect):
     """승급 이벤트 처리"""
     global gold
 
-    # 클릭한 위치가 승급 버튼 위인지 확인
-    if upgrade_button_rect and upgrade_button_rect.collidepoint(mouse_pos):
-        if gold >= 200:  # 골드 충분 여부 확인
-            gold -= 200  # 골드 차감
+    if selected_tower and upgrade_button_rect and upgrade_button_rect.collidepoint(mouse_pos):
+        upgrade_cost = 200 + (getattr(selected_tower, 'level', 1) - 1) * 50  # 레벨에 따른 승급 비용 계산
+        if gold >= upgrade_cost:  # 골드 충분 여부 확인
+            gold -= upgrade_cost  # 골드 차감
             upgrade_tower(selected_tower)  # 선택된 타워 승급
-            print(f"승급 완료! 타워 레벨: {selected_tower.level}")
+            print(f"승급 완료! 타워 레벨: {getattr(selected_tower, 'level', 1)}")
         else:
-            print("골드가 부족합니다.")
+            print(f"골드가 부족합니다. 필요 골드: {upgrade_cost}")
+            
+          
+def upgrade_tower(tower):
+    """타워 승급 로직"""
+    global gold
+
+    # 공격 타워
+    if tower.type == "gun":
+        tower.level += 1
+        tower.damage += 10  # 레벨당 공격력 증가
+        if tower.level == 2:
+            tower.reload_time = max(10, tower.reload_time - 2)  # 공속 향상
+            tower.image_key = "gun_tower_lv2"
+        elif tower.level == 3:
+            tower.range += block_size  # 사거리 증가
+            tower.image_key = "gun_tower_lv3"
+        elif tower.level == 4:
+            tower.double_attack = True  # 더블 어택 활성화
+            tower.image_key = "gun_tower_lv4"
+        print(f"총기 타워 승급: 레벨 {tower.level}")
+
+    # 지뢰 타워
+    elif tower.type == "mine":
+        tower.level += 1
+        tower.damage += 10  # 레벨당 공격력 증가
+        if tower.level == 2:
+            tower.explosion_damage_reduction = 1.5  # 폭발 피해 감소율 조정 (1.5분의 1 피해)
+            tower.image_key = "mine_tower_lv2"
+        elif tower.level == 3:
+            tower.slow_effect = 0.3  # 둔화 효과 증가 (30% 감소)
+            tower.image_key = "mine_tower_lv3"
+        elif tower.level == 4:
+            tower.range += block_size  # 폭발 범위 증가
+            tower.image_key = "mine_tower_lv4"
+        print(f"지뢰 타워 승급: 레벨 {tower.level}")
+
+    # 보급 타워
+    elif tower.type == "supply":
+        tower.level += 1
+        tower.buff_amount += 5  # 레벨당 버프량 증가
+        if tower.level == 2:
+            tower.buff_amount += 5  # 버프량 추가 증가
+        elif tower.level == 3:
+            tower.range += block_size  # 버프 사거리 증가
+        elif tower.level == 4:
+            tower.buff_amount += 10  # 추가 버프량 증가
+        # 지원 타워는 동일 이미지 유지
+        print(f"보급 타워 승급: 레벨 {tower.level}")
+
+cutscene_played_waves = []  # 이미 실행된 웨이브를 기록하는 리스트
 
 def handle_wave_logic():
-    global wave, wave_pause, wave_pause_timer, wave_cutscene_active, enemies_spawned, last_spawn_time, tile_map, e_tile
+    global wave, wave_pause, wave_pause_timer, wave_cutscene_active, enemies_spawned, last_spawn_time, tile_map, e_tile, wave_pause_duration
 
     # 컷씬 활성 상태 처리
     if wave_cutscene_active:
         if not cutscene_manager.is_cutscene_active():  # 컷씬 종료 확인
             wave_cutscene_active = False  # 컷씬 종료
-            print("컷씬 종료, 웨이브 진행 가능.")
+            wave_pause = True  # 컷씬 종료 후 대기 상태로 전환
+            wave_pause_timer = pygame.time.get_ticks()  # 컷씬 종료 후 타이머 초기화
+            wave_pause_duration = 5000  # 5초 대기 시간 설정
+            cutscene_manager.cutscenes = []  # 컷씬 데이터를 초기화
+            print("컷씬 종료, 게임 화면으로 복귀.")
         else:
             return  # 컷씬이 진행 중이면 다른 로직 실행 안 함
 
     # 웨이브 대기 상태 처리
     if wave_pause:
         current_time = pygame.time.get_ticks()
-        remaining_time = (current_time - wave_pause_timer)
-
-        if remaining_time >= wave_pause_duration:  # 대기 시간이 끝났다면
+        if current_time - wave_pause_timer >= wave_pause_duration:  # 대기 시간이 끝났다면
             wave_pause = False
             wave_pause_timer = 0
             wave += 1
@@ -467,10 +652,11 @@ def handle_wave_logic():
             update_tiles(wave)
 
             # 특정 웨이브에서 컷씬 실행
-            if wave in [11, 21, 31, 41]:
+            if wave in [11, 21, 31, 41] and wave not in cutscene_played_waves:
                 cutscene_manager.load_cutscenes_for_wave("cutscene_data.json", wave)
-                if cutscene_manager.cutscenes:
+                if cutscene_manager.cutscenes:  # 컷씬이 있는 경우에만 실행
                     wave_cutscene_active = True
+                    cutscene_played_waves.append(wave)  # 실행된 웨이브 기록
                     print(f"Wave {wave} 컷씬 실행")
                     return  # 컷씬 실행 중이므로 적 생성 중단
 
@@ -480,30 +666,41 @@ def handle_wave_logic():
     if not wave_pause and enemies_spawned < max_enemies_per_wave:
         current_time = pygame.time.get_ticks()
         if current_time - last_spawn_time >= enemy_spawn_interval:
-            enemies.append(Enemy(path_coords))  # 적 생성
+            # 보스 및 특수 좀비 생성
+            if enemies_spawned == max_enemies_per_wave - 1:  # 마지막 적 생성
+                if wave % 10 == 0:  # 10, 20, 30, 40 등 웨이브
+                    boss_type = wave // 10  # 보스 좀비 타입 결정
+                    enemies.append(BossEnemy(path_coords, boss_type=boss_type, health_increment=25 * wave))
+                    print(f"보스 좀비 생성! 타입: {boss_type}")
+                elif wave % 5 == 0 and (wave - 5 ) % 10 == 0:  # 5, 15, 25, 35 등 웨이브
+                    special_type = (wave - 5) // 10 + 1  # 특수 좀비 타입 결정
+                    if special_type > 4:
+                        special_type = 4
+                    enemies.append(SpecialEnemy(path_coords, special_type=special_type))
+                    print(f"특수 좀비 생성! 타입: {special_type}")
+                else:
+                    enemies.append(Enemy(path_coords, health=20 + 25 * wave))  # 일반 좀비 생성
+            else:
+                enemies.append(Enemy(path_coords, health=20 + 25 * wave))  # 일반 적 생성
+
             enemies_spawned += 1
             last_spawn_time = current_time
             print(f"적 생성: {enemies_spawned}/{max_enemies_per_wave}")
 
     # 모든 적이 제거된 경우 웨이브 대기로 전환
-    if enemies_spawned == max_enemies_per_wave and not enemies:
+    if enemies_spawned == max_enemies_per_wave and all(not enemy.alive for enemy in enemies):
         if not wave_pause:
-            wave_pause = True
-            wave_pause_timer = pygame.time.get_ticks()
-            print("모든 적 제거됨. 다음 웨이브 대기 시작.")
+            if wave in [11, 21, 31, 41] and wave not in cutscene_played_waves:
+                cutscene_manager.load_cutscenes_for_wave("cutscene_data.json", wave)
+                wave_cutscene_active = True
+                cutscene_played_waves.append(wave)  # 실행된 웨이브 기록
+                print(f"Wave {wave} 컷씬 실행, 컷씬 이후 대기 시작.")
+            else:
+                wave_pause = True
+                wave_pause_timer = pygame.time.get_ticks()
+                wave_pause_duration = 1000  # 웨이브 종료 후 5초 대기
+                print("모든 적 제거됨. 다음 웨이브 대기 5초 시작.")
 
-            # 보스 및 특수 좀비 생성 로직
-            if wave % 10 == 0:  # 10, 20, 30 등 웨이브의 마지막 적은 보스 좀비
-                boss_enemy = BossEnemy(path_coords)
-                enemies.append(boss_enemy)
-                print("보스 좀비 생성!")
-
-            elif wave % 5 == 0:  # 5, 15, 25 등 웨이브의 마지막 적은 특수 좀비
-                special_enemy = SpecialEnemy(path_coords)
-                enemies.append(special_enemy)
-                print("특수 좀비 생성!")
-
-            print("웨이브 종료, 다음 웨이브 대기 중...")
 
 def handle_tower_selection(mouse_pos):
     global selected_tower_ui
@@ -518,17 +715,6 @@ def handle_tower_selection(mouse_pos):
     selected_tower_ui = None
     print("타워 선택 해제")
     
-def upgrade_tower(tower):
-    """타워 승급 로직"""
-    # 타워 레벨 증가
-    tower.level = getattr(tower, 'level', 1) + 1  # 레벨이 없으면 1로 시작
-    tower.damage += 20  # 공격력 증가
-    tower.range += block_size  # 사거리 증가
-    tower.reload_time = max(10, tower.reload_time - 5)  # 재장전 시간 감소
-
-    # 보급 타워의 경우 버프 강화
-    if tower.type == "supply":
-        tower.buff_amount += 5  # 보급 타워 버프 증가
 
 def draw_tower_ui():
     """화면 왼쪽에 타워 선택 UI를 그립니다."""
@@ -558,6 +744,9 @@ def handle_tower_ui_events(event):
     INSTALLABLE_AREA = pygame.Rect(0, 0, 1300, 700)  # 설치 가능한 영역
     path_blocks = [(x * block_size, y * block_size) for x, y in path_coords]
 
+    # 추가 설치 금지 영역 정의
+    RESTRICTED_AREA = pygame.Rect(1100, 0, 200, 300)  # x: 1100~1300, y: 0~200
+
     if event.type == pygame.MOUSEBUTTONDOWN:
         mouse_x, mouse_y = event.pos
         y_offset = tower_ui_rect.y + 20
@@ -578,12 +767,16 @@ def handle_tower_ui_events(event):
         grid_y = (mouse_y // block_size) * block_size
 
         # 타워 설치 확인
-        if INSTALLABLE_AREA.collidepoint(mouse_x, mouse_y) and (grid_x, grid_y) not in path_blocks:
-            if all((tower.x, tower.y) != (grid_x, grid_y) for tower in towers):
-                new_tower = Tower(grid_x, grid_y, selected_tower["type"])
-                towers.append(new_tower)
-                print(f"타워 설치됨: {new_tower.type}, 위치=({new_tower.x}, {new_tower.y})")
-                gold -= selected_tower["cost"]
+        if (
+            INSTALLABLE_AREA.collidepoint(mouse_x, mouse_y) and
+            not RESTRICTED_AREA.collidepoint(mouse_x, mouse_y) and  # 추가 설치 금지 영역 체크
+            (grid_x, grid_y) not in path_blocks and
+            all((tower.x, tower.y) != (grid_x, grid_y) for tower in towers)
+        ):
+            new_tower = Tower(grid_x, grid_y, selected_tower["type"])
+            towers.append(new_tower)
+            print(f"타워 설치됨: {new_tower.type}, 위치=({new_tower.x}, {new_tower.y})")
+            gold -= selected_tower["cost"]
         else:
             print("설치할 수 없는 위치입니다.")
 
@@ -592,62 +785,10 @@ def handle_tower_ui_events(event):
         selected_tower_image = None
         dragging = False
 
-        
-def draw_game_over_screen():
-    """게임 오버 화면 그리기"""
-    # 배경 이미지 표시
-    screen.blit(image["game_over_bg"], (0, 0))  # 화면에 배경 이미지 표시
-
-    # 게임 오버 텍스트
-    retry_text = font12.render("재도전", True, BLACK)
-    title_text = font12.render("타이틀로", True, BLACK)
-
-    # 버튼 위치 설정
-    retry_rect = pygame.Rect(WIDTH // 2 - 100, HEIGHT // 2 - 50, 200, 60)
-    title_rect = pygame.Rect(WIDTH // 2 - 100, HEIGHT // 2 + 20, 200, 60)
-
-    # 버튼 그리기
-    pygame.draw.rect(screen, LIGHT_RED, retry_rect)
-    pygame.draw.rect(screen, LIGHT_BLUE, title_rect)
-
-    # 텍스트 버튼에 렌더링 (버튼 중심에 위치)
-    retry_text_rect = retry_text.get_rect(center=retry_rect.center)
-    title_text_rect = title_text.get_rect(center=title_rect.center)
-    screen.blit(retry_text, retry_text_rect)  # 텍스트를 버튼 중심에 맞게 배치
-    screen.blit(title_text, title_text_rect)
-
-    return retry_rect, title_rect
-
-def reset_game():
-    """게임 상태 초기화"""
-    global life, gold, wave, enemies, towers, game_over, current_screen
-
-    life = 10
-    gold = 100
-    wave = 0
-    enemies = []
-    towers = []
-    game_over = False
-    current_screen = "game"
-    
-def handle_game_over_events(retry_rect, title_rect):
-    """게임 오버 화면에서 이벤트 처리"""
-    global current_screen, life, game_over
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:  # 게임 종료
-            pygame.quit()
-            sys.exit()
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # 마우스 왼쪽 클릭
-            mouse_pos = pygame.mouse.get_pos()
-            if retry_rect.collidepoint(mouse_pos):  # 재도전 버튼 클릭
-                reset_game()
-            elif title_rect.collidepoint(mouse_pos):  # 타이틀로 버튼 클릭
-                current_screen = "start"
 
 def handle_game_logic():
     """게임 내 주요 로직 처리"""
-    global gold, life,wave
+    global gold, life,wave, current_screen
 
     # 적 이동 및 상태 확인
     for enemy in enemies[:]:
@@ -656,16 +797,20 @@ def handle_game_logic():
             enemies.remove(enemy)
             if enemy.index == len(path_coords) - 1:  # 적이 도달한 경우
                 life -= 1
-                if life <= 0:
-                    print("Game Over!")  # 디버그용 (추후 종료 처리 추가 가능)
+                print(f"적이 도달했습니다! 남은 라이프: {life}")
+                if life <= 0:  # 라이프가 0 이하가 되었을 때
+                    print("Game Over!")  # 디버그 메시지
+                    current_screen = "game_over"  # 게임 오버 화면으로 전환
+                    return  # 더 이상 처리하지 않음
 
     # 타워 공격 처리
     for tower in towers:
-        tower.attack(enemies)        
+        tower.attack(enemies)
 
 # 게임 이벤트 처리 수정
-def handle_game_events():
-    global current_screen, wave_cutscene_active, wave_pause, wave_pause_timer, enemies_spawned, game_over, gold  # 글로벌 변수 선언
+def handle_game_events(retry_rect=None, title_rect=None):
+    """게임 이벤트 처리"""
+    global current_screen, wave_cutscene_active, wave_pause, wave_pause_timer, enemies_spawned, game_over, selected_tower_ui, gold, mouse_pos
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -683,29 +828,23 @@ def handle_game_events():
                     current_screen = "game"
 
         elif current_screen == "game":
-            # 게임 이벤트 처리
+            # 타워 UI 관련 이벤트 처리
             handle_tower_ui_events(event)
+
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_pos = pygame.mouse.get_pos()
-                handle_tower_selection(mouse_pos)
-                    
-                # 선택된 타워 승급 버튼 클릭 처리
+
+                # 승급 버튼 클릭 처리 (타워 선택 처리보다 먼저 실행)
                 if selected_tower_ui:
                     upgrade_button_rect = draw_selected_tower_info(selected_tower_ui)
                     if upgrade_button_rect and upgrade_button_rect.collidepoint(mouse_pos):
-                        # 골드 확인 및 승급 처리
-                        if gold >= 200:
-                            print("승급하시겠습니까? [확인 버튼을 추가하거나 팝업 처리]")
-                            confirmed = input("승급하시겠습니까? (y/n): ").strip().lower()
-                            if confirmed == 'y':
-                                gold -= 200
-                                upgrade_tower(selected_tower_ui)
-                                print("승급 완료!")
-                            else:
-                                print("승급 취소.")
-                        else:
-                            print("골드가 부족합니다.") 
-            if wave_cutscene_active:                   
+                        handle_upgrade_event(selected_tower_ui, mouse_pos, upgrade_button_rect)
+                        return  # 승급 버튼 클릭 처리 후 종료
+
+                # 타워 선택 처리
+                handle_tower_selection(mouse_pos)
+
+            if wave_cutscene_active:
                 # 컷씬 중 키 입력 처리
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                     cutscene_manager.next_cutscene()
@@ -713,21 +852,15 @@ def handle_game_events():
                     if not cutscene_manager.is_cutscene_active():
                         wave_cutscene_active = False  # 컷씬 종료
                         print("컷씬 종료, 게임 화면으로 복귀.")
+            else:
+                # 게임 이벤트 처리
+                handle_tower_ui_events(event)
 
-                # 적 생성 이벤트 처리
-                if event.type == ENEMY_SPAWN_EVENT and enemies_spawned < max_enemies_per_wave:
-                    enemies.append(Enemy(path_coords))
-                    enemies_spawned += 1
-                    print(f"적 생성: {enemies_spawned}/{max_enemies_per_wave}")
-    
+            # 적 생성 이벤트 처리
             if event.type == ENEMY_SPAWN_EVENT and enemies_spawned < max_enemies_per_wave:
                 enemies.append(Enemy(path_coords))
                 enemies_spawned += 1
-
-        elif current_screen == "game_over":
-            retry_rect, title_rect = draw_game_over_screen()
-            handle_game_over_events(retry_rect, title_rect)                            
-
+                print(f"적 생성: {enemies_spawned}/{max_enemies_per_wave}")
 
 # BGM 재생 함수
 def play_start_bgm():
@@ -754,9 +887,12 @@ def draw_game_elements():
 # 메인 루프 수정
 def main():
     global current_screen, wave_cutscene_active, selected_tower_ui
+
     play_start_bgm()  # 게임 시작 시 BGM 재생
+
+    game_over_timer = None  # 게임 오버 시작 시간을 기록할 변수
     while True:
-        screen.fill(WHITE)   # 화면 초기화
+        screen.fill(WHITE)  # 화면 초기화
         handle_game_events()
 
         if current_screen == "start":
@@ -777,10 +913,21 @@ def main():
                     draw_selected_tower_info(selected_tower_ui)
 
         elif current_screen == "game_over":
-            draw_game_over_screen()
+            if game_over_timer is None:  # 게임 오버 타이머 초기화
+                game_over_timer = pygame.time.get_ticks()  # 현재 시간 기록
+
+            # 게임 오버 화면 그리기
+            screen.blit(image["game_over_bg"], (0, 0))
+            pygame.display.flip()  # 화면 업데이트
+
+            # 10초가 경과하면 프로그램 종료
+            if pygame.time.get_ticks() - game_over_timer >= 10000:
+                pygame.quit()
+                sys.exit()
 
         pygame.display.flip()
         clock.tick(60)
+
 
 if __name__ == "__main__":
     main()
