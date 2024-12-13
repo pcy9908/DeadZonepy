@@ -69,7 +69,7 @@ gold = 1000  # 초기 자원
 life = 1  # 초기 생명
 wave = 0  # 초기 웨이브
 enemies_spawned = 0  # 현재 웨이브에서 생성된 적 수
-max_enemies_per_wave = 1 # 웨이브당 적 최대 수
+max_enemies_per_wave = 10 # 웨이브당 적 최대 수
 enemy_spawn_interval = 1000  # 적 스폰 간격 (밀리초, 더 빠르게)
 last_spawn_time = 0  # 마지막 적 생성 시간
 wave_pause = False  # 웨이브 대기 상태
@@ -82,6 +82,7 @@ Nanum = "fonts/NanumGothicBold.ttf"
 font = pygame.font.Font(None, 36)
 font12 = pygame.font.Font(Nanum, 12)  # None은 기본 폰트, 36은 폰트 크기
 font20 = pygame.font.Font(Nanum, 20)
+font22 = pygame.font.Font(Nanum, 22)
 font24 = pygame.font.Font(Nanum, 24)
 font36 = pygame.font.Font(Nanum, 36)
 
@@ -732,7 +733,7 @@ def draw_tower_ui():
         screen.blit(tower_image, (tower_ui_rect.x + 40, y_offset))
 
         # 타워 이름과 비용 텍스트를 이미지 바로 아래에 표시
-        tower_text = font12.render(f"{tower['name']} (${tower['cost']})", True, BLACK)
+        tower_text = font22.render(f"{tower['name']} (${tower['cost']})", True, BLACK)
         screen.blit(tower_text, (tower_ui_rect.x + 40, y_offset + 110))  # 이미지 아래 10px 간격
 
         y_offset += 100 + 50  # 이미지 높이(100) + 텍스트 높이 및 간격(50)
