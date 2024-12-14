@@ -75,7 +75,7 @@ enemy_spawn_interval = 500  # 적 스폰 간격 (밀리초, 더 빠르게)
 last_spawn_time = 0  # 마지막 적 생성 시간
 wave_pause = False  # 웨이브 대기 상태
 wave_pause_timer = 0  # 웨이브 대기 시간
-wave_pause_duration = 10000  # 10초 대기 (밀리초)
+wave_pause_duration = 1000  # 10초 대기 (밀리초)
 current_screen = "start"  # 시작 화면에서 시작
 
 # HUD에 사용될 폰트 설정
@@ -242,9 +242,9 @@ class BossEnemy(Enemy):
 
 class SpecialEnemy(Enemy):
     """특수 좀비 클래스"""
-    def __init__(self, path_coords, special_type,health_increment=0):
+    def __init__(self, path_coords, special_type, health_increment=0):
         S_health = [400, 600, 800, 1000][special_type - 1]
-        health=S_health+health_increment
+        health = S_health + health_increment
         speed = [3.0, 2.8, 2.6, 2.5][special_type - 1]
         super().__init__(path_coords, speed, health)
         self.type = special_type
@@ -263,7 +263,7 @@ class SpecialEnemy(Enemy):
                 self.cooldowns[key] -= 1
 
         if self.type >= 1 and self.cooldowns["boost_speed"] == 0:
-            self._boost_nearby_speed(enemies, 0.5)  # 이동 속도 30% 증가
+            self._boost_nearby_speed(enemies, 0.5, range_blocks=2)  # 이동 속도 50% 증가 (2칸 범위)
             self.cooldowns["boost_speed"] = 300  # 5초 쿨타임
 
         if self.type >= 2 and self.cooldowns["stun_towers"] == 0:
@@ -274,11 +274,11 @@ class SpecialEnemy(Enemy):
             self._heal_area_enemies(enemies, 20, 2)  # 2칸 범위 내 체력 20% 회복
             self.cooldowns["heal_area"] = 420  # 7초 쿨타임
 
-    def _boost_nearby_speed(self, enemies, boost_amount):
-        """주변 적 이동 속도 증가"""
+    def _boost_nearby_speed(self, enemies, boost_amount, range_blocks):
+        """범위 내 주변 적 이동 속도 증가"""
         for enemy in enemies:
             dist = math.sqrt((self.x - enemy.x) ** 2 + (self.y - enemy.y) ** 2)
-            if dist <= block_size:  # 1칸 내
+            if dist <= block_size * range_blocks:  # 범위 내
                 enemy.speed += boost_amount
                 print(f"특수 좀비({self.type})가 {enemy}의 속도를 {boost_amount * 100:.0f}% 증가시켰습니다.")
 
@@ -296,6 +296,7 @@ class SpecialEnemy(Enemy):
                 heal_amount = enemy.max_health * (percentage / 100)
                 enemy.health = min(enemy.max_health, enemy.health + heal_amount)
                 print(f"특수 좀비({self.type})가 범위 내 {enemy} 체력을 {heal_amount:.0f} 회복시켰습니다.")
+
  
 class Tower:
     def __init__(self, x, y, tower_type):
@@ -697,22 +698,21 @@ def handle_wave_logic():
                 current_screen = "the_end"  # "THE END" 화면으로 전환
                 return
 
-    # 적 생성 처리 (대기 상태가 아닐 때만)
+   # 적 생성 처리 (대기 상태가 아닐 때만)
     if not wave_pause and enemies_spawned < max_enemies_per_wave:
         current_time = pygame.time.get_ticks()
         if current_time - last_spawn_time >= enemy_spawn_interval:
             if wave % 10 == 0 and enemies_spawned == 0:  # 10, 20, 30, 40 등 웨이브 보스 좀비 생성
                 boss_type = min(4, wave // 10)  # 보스 좀비 타입 결정 (최대 타입 4)
-                enemies.append(BossEnemy(path_coords, boss_type=boss_type, health_increment=100 * wave))
+                enemies.insert(0, BossEnemy(path_coords, boss_type=boss_type, health_increment=100 * wave))  # 맨 앞에 추가
                 print(f"보스 좀비 생성! 타입: {boss_type}")
 
             elif wave % 5 == 0 and wave % 10 != 0 and enemies_spawned == 0:  # 5, 15, 25, 35 등 웨이브 특수 좀비 생성
                 special_type = min(4, wave // 5)  # 특수 좀비 타입 결정 (최대 타입 4)
-                special_enemy = SpecialEnemy(path_coords, special_type=special_type)  # 객체 생성
-                special_enemy.health += 50 * wave  # health_increment 적용
-                enemies.append(special_enemy)  # 적 리스트에 추가
+                special_enemy = SpecialEnemy(path_coords, special_type=special_type, health_increment=100 * wave)
+                middle_index = len(enemies) // 2  # 리스트의 중간 인덱스 계산
+                enemies.insert(middle_index, special_enemy)  # 중간에 추가
                 print(f"특수 좀비 생성! 타입: {special_type}")
-
 
             else:  # 일반 좀비 생성
                 enemies.append(Enemy(path_coords, health=20 + 50 * wave))
@@ -720,6 +720,7 @@ def handle_wave_logic():
             enemies_spawned += 1
             last_spawn_time = current_time
             print(f"적 생성: {enemies_spawned}/{max_enemies_per_wave}")
+
 
     # 모든 적이 제거된 경우 웨이브 대기로 전환
     if enemies_spawned == max_enemies_per_wave and all(not enemy.alive for enemy in enemies):
