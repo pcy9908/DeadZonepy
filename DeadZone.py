@@ -75,7 +75,7 @@ enemy_spawn_interval = 500  # 적 스폰 간격 (밀리초, 더 빠르게)
 last_spawn_time = 0  # 마지막 적 생성 시간
 wave_pause = False  # 웨이브 대기 상태
 wave_pause_timer = 0  # 웨이브 대기 시간
-wave_pause_duration = 1000  # 10초 대기 (밀리초)
+wave_pause_duration = 10000  # 10초 대기 (밀리초)
 current_screen = "start"  # 시작 화면에서 시작
 
 # HUD에 사용될 폰트 설정
@@ -95,7 +95,7 @@ cutscene_manager.set_font(Nanum, size=36)
 
 # 컷씬 데이터 로드
 cutscene_file_path = "cutscene_data.json"
-wave_cutscene_waves = [11, 21, 31, 41]
+wave_cutscene_waves = [1, 11, 21, 31, 41]
 wave_cutscene_active = False  # 컷씬 상태 플래그
 
 # 타워 UI 변수
@@ -425,8 +425,6 @@ class Tower:
             return None
         return max(enemies_in_range, key=lambda e: e.index)
 
-
-
 # 화면 그리기 함수
 def draw_start_screen():
     """시작 화면 그리기"""
@@ -503,8 +501,7 @@ def draw_hud():
     for text in texts:
         screen.blit(text, (start_x + 30, start_y + y_offset))
         y_offset += hud_padding  # 다음 텍스트의 위치를 업데이트
-        
-        
+         
 def draw_selected_tower_info(selected_tower):
     """선택된 타워의 정보를 하단 UI에 표시"""
     if selected_tower is None:
@@ -577,8 +574,6 @@ def draw_selected_tower_info(selected_tower):
 
     # 버튼 사각형 반환
     return upgrade_button_rect
- 
-
 
 def draw_tower_range(selected_tower):
     """선택된 타워의 사거리를 원으로 표시"""
@@ -654,7 +649,8 @@ def upgrade_tower(tower):
 cutscene_played_waves = []  # 이미 실행된 웨이브를 기록하는 리스트
 
 def handle_wave_logic():
-    global wave, wave_pause, wave_pause_timer, wave_cutscene_active, enemies_spawned, last_spawn_time, tile_map, e_tile, wave_pause_duration, gold
+    global wave, wave_pause, wave_pause_timer, wave_cutscene_active, enemies_spawned, last_spawn_time
+    global tile_map, e_tile, wave_pause_duration, gold, current_screen
 
     # 컷씬 활성 상태 처리
     if wave_cutscene_active:
@@ -682,15 +678,24 @@ def handle_wave_logic():
             update_tiles(wave)
 
             # 특정 웨이브에서 컷씬 실행
-            if wave in [11, 21, 31, 41] and wave not in cutscene_played_waves:
+            if wave in [1, 11, 21, 31, 41] and wave not in cutscene_played_waves:
                 cutscene_manager.load_cutscenes_for_wave("cutscene_data.json", wave)
                 if cutscene_manager.cutscenes:  # 컷씬이 있는 경우에만 실행
                     wave_cutscene_active = True
                     cutscene_played_waves.append(wave)  # 실행된 웨이브 기록
+
+                    # 41 웨이브 컷씬 종료 후 "THE END"로 전환
+                    if wave == 41:
+                        cutscene_manager.on_cutscene_end = lambda: globals().__setitem__('current_screen', 'the_end')
+
                     print(f"Wave {wave} 컷씬 실행")
                     return  # 컷씬 실행 중이므로 적 생성 중단
 
-        return  # 대기 상태에서는 적을 생성하지 않음
+            # 41 웨이브 종료 시 "THE END" 화면으로 전환
+            if wave > 41:
+                print("모든 웨이브 종료. THE END 화면으로 전환합니다.")
+                current_screen = "the_end"  # "THE END" 화면으로 전환
+                return
 
     # 적 생성 처리 (대기 상태가 아닐 때만)
     if not wave_pause and enemies_spawned < max_enemies_per_wave:
@@ -728,7 +733,7 @@ def handle_wave_logic():
                 wave_pause = True
                 wave_pause_timer = pygame.time.get_ticks()
                 gold += 100
-                wave_pause_duration = 5000  # 웨이브 종료 후 5초 대기
+                wave_pause_duration = 1000  # 웨이브 종료 후 5초 대기
                 print("모든 적 제거됨. 다음 웨이브 대기 5초 시작.")
 
     # 특수 좀비와 보스 좀비 능력 실행
@@ -926,6 +931,7 @@ def main():
     play_start_bgm()  # 게임 시작 시 BGM 재생
 
     game_over_timer = None  # 게임 오버 시작 시간을 기록할 변수
+    the_end_timer = None
     while True:
         screen.fill(WHITE)  # 화면 초기화
         handle_game_events()
@@ -959,6 +965,24 @@ def main():
             if pygame.time.get_ticks() - game_over_timer >= 10000:
                 pygame.quit()
                 sys.exit()
+        
+        elif current_screen == "the_end":
+            if the_end_timer is None:  # 게임 오버 타이머 초기화
+                the_end_timer = pygame.time.get_ticks()  # 현재 시간 기록
+
+            # 게임 오버 화면 그리기
+            screen.blit(image["the_end_bg"], (0, 0))
+            pygame.display.flip()  # 화면 업데이트
+
+            if not pygame.mixer.music.get_busy():  # 이미 재생 중인지 확인
+                pygame.mixer.music.load(audio["end"])
+                pygame.mixer.music.set_volume(0.2)
+                pygame.mixer.music.play(-1)
+
+            # 100초가 경과하면 프로그램 종료
+            if pygame.time.get_ticks() - the_end_timer >= 990000:
+                pygame.quit()
+                sys.exit()        
 
         pygame.display.flip()
         clock.tick(60)
