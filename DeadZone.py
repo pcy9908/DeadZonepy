@@ -66,12 +66,12 @@ pygame.time.set_timer(ENEMY_SPAWN_EVENT, 10000)
 # 글로벌 변수 초기화
 enemies = []  # 적 리스트
 towers = []  # 타워 리스트
-gold = 1000  # 초기 자원
-life = 1  # 초기 생명
+gold = 100  # 초기 자원
+life = 10  # 초기 생명
 wave = 0  # 초기 웨이브
 enemies_spawned = 0  # 현재 웨이브에서 생성된 적 수
-max_enemies_per_wave = 10 # 웨이브당 적 최대 수
-enemy_spawn_interval = 1000  # 적 스폰 간격 (밀리초, 더 빠르게)
+max_enemies_per_wave = 20 # 웨이브당 적 최대 수
+enemy_spawn_interval = 500  # 적 스폰 간격 (밀리초, 더 빠르게)
 last_spawn_time = 0  # 마지막 적 생성 시간
 wave_pause = False  # 웨이브 대기 상태
 wave_pause_timer = 0  # 웨이브 대기 시간
@@ -104,8 +104,8 @@ tower_ui_rect = pygame.Rect(1350, 250, tower_ui_width + 80, HEIGHT - 400)  # UI 
 
 TOWER_TYPES = [
     {"name": "Gun Tower", "cost": 50, "color": LIGHT_BLUE, "type": "gun", "image_path": "gun_tower.png"},
-    {"name": "Mine Tower", "cost": 75, "color": LIGHT_RED, "type": "mine", "image_path": "mine_tower.png"},
-    {"name": "Supply Tower", "cost": 20, "color": LIGHT_GREEN, "type": "supply", "image_path": "supply_tower.png"}
+    {"name": "Mine Tower", "cost": 50, "color": LIGHT_RED, "type": "mine", "image_path": "mine_tower.png"},
+    {"name": "Supply Tower", "cost": 30, "color": LIGHT_GREEN, "type": "supply", "image_path": "supply_tower.png"}
 ]
 
 selected_tower = None  # 현재 선택된 타워
@@ -117,10 +117,11 @@ class Enemy:
         self.x *= block_size
         self.y *= block_size
         self.speed = speed
+        self.original_speed = speed  # 원래 속도 저장
         self.health = health
         self.max_health = health  # 최대 체력을 별도로 저장
         self.alive = True
-
+        self.slow_duration = 0  # 둔화 지속 시간
         # 적 이미지 로드 및 크기 조정
         self.image = pygame.image.load(image_path)
         self.image = pygame.transform.scale(self.image, (block_size, block_size))  # 블록 크기에 맞게 조정
@@ -171,7 +172,11 @@ class Enemy:
         health_ratio = self.health / self.max_health  # 최대 체력을 기준으로 비율 계산
         pygame.draw.rect(screen, DARK_GRAY, (self.x, self.y - 10, health_bar_width, 5))  # 배경 바
         pygame.draw.rect(screen, LIGHT_RED, (self.x, self.y - 10, health_bar_width * health_ratio, 5))  # 현재 체력 바
-
+        
+    def apply_slow(self, slow_effect, duration=120):
+        """둔화 효과 적용"""
+        self.speed = self.original_speed * (1 - slow_effect)  # 속도 감소
+        self.slow_duration = duration  # 둔화 지속 시간 설정
 class BossEnemy(Enemy):
     """보스 좀비 클래스"""
     def __init__(self, path_coords, boss_type, health_increment=0):
@@ -200,7 +205,7 @@ class BossEnemy(Enemy):
                 self.cooldowns[key] -= 1
 
         if self.type >= 1 and self.cooldowns["heal_nearby"] == 0:
-            self._heal_nearby_enemies(enemies, 10)  # 체력 10% 회복
+            self._heal_nearby_enemies(enemies, 20)  # 체력 20% 회복
             self.cooldowns["heal_nearby"] = 600  # 10초 쿨타임
 
         if self.type >= 2 and self.cooldowns["stun_towers"] == 0:
@@ -237,8 +242,9 @@ class BossEnemy(Enemy):
 
 class SpecialEnemy(Enemy):
     """특수 좀비 클래스"""
-    def __init__(self, path_coords, special_type):
-        health = [200, 250, 300, 350][special_type - 1]
+    def __init__(self, path_coords, special_type,health_increment=0):
+        S_health = [400, 600, 800, 1000][special_type - 1]
+        health=S_health+health_increment
         speed = [3.0, 2.8, 2.6, 2.5][special_type - 1]
         super().__init__(path_coords, speed, health)
         self.type = special_type
@@ -257,7 +263,7 @@ class SpecialEnemy(Enemy):
                 self.cooldowns[key] -= 1
 
         if self.type >= 1 and self.cooldowns["boost_speed"] == 0:
-            self._boost_nearby_speed(enemies, 0.3)  # 이동 속도 30% 증가
+            self._boost_nearby_speed(enemies, 0.5)  # 이동 속도 30% 증가
             self.cooldowns["boost_speed"] = 300  # 5초 쿨타임
 
         if self.type >= 2 and self.cooldowns["stun_towers"] == 0:
@@ -295,8 +301,8 @@ class Tower:
     def __init__(self, x, y, tower_type):
         if tower_type == "gun":
             self.range = 3 * block_size
-            self.damage = 20
-            self.reload_time = 30
+            self.damage = 50
+            self.reload_time = 40
             self.double_attack = False  # 더블 어택 기본값
             self.image_key = "gun_tower"
             self.shot_sound = audio["gun_sound"]
@@ -305,7 +311,7 @@ class Tower:
         elif tower_type == "mine":
             self.range = 3 * block_size  # 타워 사거리
             self.damage = 70
-            self.reload_time = 10  # 공속 조정
+            self.reload_time = 60  # 공속 조정
             self.explosion_range = block_size  # 폭발 범위 (1블럭)
             self.image_key = "mine_tower"
             self.shot_sound = audio["mine_sound"]
@@ -313,7 +319,7 @@ class Tower:
 
         elif tower_type == "supply":
             self.range = 2 * block_size
-            self.buff_amount = 10
+            self.buff_amount = 40
             self.image_key = "supply_tower"
             self.effect_duration = 300  # 버프 지속 시간
             self.reload_time = 0  # 공격하지 않음
@@ -338,7 +344,7 @@ class Tower:
             if self.type == "gun":
                 target_enemy = max(
                     (enemy for enemy in enemies if self._is_in_range(enemy)),
-                    key=lambda e: e.health,
+                    key=lambda e: (e.max_health, e.index),  # 최대 체력 우선, 동일하면 선두 우선
                     default=None
                 )
                 if target_enemy:
@@ -356,7 +362,7 @@ class Tower:
                             if not second_target.alive:
                                 second_target = max(
                                     (enemy for enemy in enemies if self._is_in_range(enemy) and enemy.alive),
-                                    key=lambda e: e.health,
+                                    key=lambda e: (e.max_health, e.index),
                                     default=None
                                 )
                             if second_target:
@@ -366,7 +372,7 @@ class Tower:
 
                         pygame.time.set_timer(pygame.USEREVENT + 2, 100, True)  # 100ms 딜레이
                         pygame.event.post(pygame.event.Event(pygame.USEREVENT + 2, {"callback": second_attack}))
-                    
+
                     self.cooldown = self.reload_time
 
             elif self.type == "mine":
@@ -375,13 +381,23 @@ class Tower:
                     self.angle = self._calculate_angle_to_target(target_enemy)
                     target_enemy.take_damage(self.damage)
                     self.shot_sound.play()
+
+                    # 둔화 효과 적용
+                    if hasattr(self, 'slow_effect'):
+                        target_enemy.apply_slow(self.slow_effect)
+
+                    # 폭발 범위 내 다른 적에도 피해와 둔화 적용
                     for other_enemy in enemies:
                         if self._is_within_explosion_range(target_enemy, other_enemy):
                             explosion_damage = self.damage // getattr(self, "explosion_damage_reduction", 2)
                             other_enemy.take_damage(explosion_damage)
+                            if hasattr(self, 'slow_effect'):
+                                other_enemy.apply_slow(self.slow_effect)
+
                     self.cooldown = self.reload_time
         else:
             self.cooldown -= 1
+
 
     def _calculate_angle_to_target(self, enemy):
         """적과의 각도 계산 (기준: 아래쪽이 0도)"""
@@ -408,6 +424,8 @@ class Tower:
         if not enemies_in_range:
             return None
         return max(enemies_in_range, key=lambda e: e.index)
+
+
 
 # 화면 그리기 함수
 def draw_start_screen():
@@ -465,9 +483,9 @@ def draw_hud():
 
     # 텍스트 리스트 초기화 (웨이브, 골드, 라이프)
     texts = [
-        font24.render(f"Wave: {wave}", True, BLACK),
-        font24.render(f"Gold: {gold}", True, BLACK),
-        font24.render(f"Life: {life}", True, BLACK),
+        font24.render(f"Wave: {wave}", True, WHITE),
+        font24.render(f"Gold: {gold}", True, WHITE),
+        font24.render(f"Life: {life}", True, WHITE),
     ]
 
     # 다음 웨이브 텍스트 추가
@@ -593,12 +611,12 @@ def upgrade_tower(tower):
     # 공격 타워
     if tower.type == "gun":
         tower.level += 1
-        tower.damage += 10  # 레벨당 공격력 증가
+        tower.damage += 50  # 레벨당 공격력 증가
         if tower.level == 2:
-            tower.reload_time = max(10, tower.reload_time - 2)  # 공속 향상
+            tower.slow_effect = 0.4  # 둔화 효과 증가 (30% 감소)
             tower.image_key = "gun_tower_lv2"
         elif tower.level == 3:
-            tower.range += block_size  # 사거리 증가
+            tower.reload_time = max(10, tower.reload_time - 2)  # 공속 향상
             tower.image_key = "gun_tower_lv3"
         elif tower.level == 4:
             tower.double_attack = True  # 더블 어택 활성화
@@ -608,35 +626,35 @@ def upgrade_tower(tower):
     # 지뢰 타워
     elif tower.type == "mine":
         tower.level += 1
-        tower.damage += 10  # 레벨당 공격력 증가
+        tower.damage += 30  # 레벨당 공격력 증가
         if tower.level == 2:
-            tower.explosion_damage_reduction = 1.5  # 폭발 피해 감소율 조정 (1.5분의 1 피해)
+            tower.slow_effect = 0.4  # 둔화 효과 증가 (30% 감소)
             tower.image_key = "mine_tower_lv2"
         elif tower.level == 3:
-            tower.slow_effect = 0.3  # 둔화 효과 증가 (30% 감소)
+            tower.reload_time = max(10, tower.reload_time - 2)  # 공속 향상
             tower.image_key = "mine_tower_lv3"
         elif tower.level == 4:
-            tower.range += block_size  # 폭발 범위 증가
+            tower.explosion_damage_reduction = 1  # 폭발 피해 감소율 조정 (1.5분의 1 피해)
             tower.image_key = "mine_tower_lv4"
         print(f"지뢰 타워 승급: 레벨 {tower.level}")
 
     # 보급 타워
     elif tower.type == "supply":
         tower.level += 1
-        tower.buff_amount += 5  # 레벨당 버프량 증가
+        tower.buff_amount += 20 # 레벨당 버프량 증가
         if tower.level == 2:
-            tower.buff_amount += 5  # 버프량 추가 증가
+            tower.buff_amount += 20  # 버프량 추가 증가
         elif tower.level == 3:
             tower.range += block_size  # 버프 사거리 증가
         elif tower.level == 4:
-            tower.buff_amount += 10  # 추가 버프량 증가
+            tower.buff_amount += 100  # 추가 버프량 증가
         # 지원 타워는 동일 이미지 유지
         print(f"보급 타워 승급: 레벨 {tower.level}")
 
 cutscene_played_waves = []  # 이미 실행된 웨이브를 기록하는 리스트
 
 def handle_wave_logic():
-    global wave, wave_pause, wave_pause_timer, wave_cutscene_active, enemies_spawned, last_spawn_time, tile_map, e_tile, wave_pause_duration
+    global wave, wave_pause, wave_pause_timer, wave_cutscene_active, enemies_spawned, last_spawn_time, tile_map, e_tile, wave_pause_duration, gold
 
     # 컷씬 활성 상태 처리
     if wave_cutscene_active:
@@ -678,22 +696,21 @@ def handle_wave_logic():
     if not wave_pause and enemies_spawned < max_enemies_per_wave:
         current_time = pygame.time.get_ticks()
         if current_time - last_spawn_time >= enemy_spawn_interval:
-            # 보스 및 특수 좀비 생성
-            if enemies_spawned == max_enemies_per_wave - 1:  # 마지막 적 생성
-                if wave % 10 == 0:  # 10, 20, 30, 40 등 웨이브
-                    boss_type = wave // 10  # 보스 좀비 타입 결정
-                    enemies.append(BossEnemy(path_coords, boss_type=boss_type, health_increment=25 * wave))
-                    print(f"보스 좀비 생성! 타입: {boss_type}")
-                elif wave % 5 == 0 and (wave - 5 ) % 10 == 0:  # 5, 15, 25, 35 등 웨이브
-                    special_type = (wave - 5) // 10 + 1  # 특수 좀비 타입 결정
-                    if special_type > 4:
-                        special_type = 4
-                    enemies.append(SpecialEnemy(path_coords, special_type=special_type))
-                    print(f"특수 좀비 생성! 타입: {special_type}")
-                else:
-                    enemies.append(Enemy(path_coords, health=20 + 25 * wave))  # 일반 좀비 생성
-            else:
-                enemies.append(Enemy(path_coords, health=20 + 25 * wave))  # 일반 적 생성
+            if wave % 10 == 0 and enemies_spawned == 0:  # 10, 20, 30, 40 등 웨이브 보스 좀비 생성
+                boss_type = min(4, wave // 10)  # 보스 좀비 타입 결정 (최대 타입 4)
+                enemies.append(BossEnemy(path_coords, boss_type=boss_type, health_increment=100 * wave))
+                print(f"보스 좀비 생성! 타입: {boss_type}")
+
+            elif wave % 5 == 0 and wave % 10 != 0 and enemies_spawned == 0:  # 5, 15, 25, 35 등 웨이브 특수 좀비 생성
+                special_type = min(4, wave // 5)  # 특수 좀비 타입 결정 (최대 타입 4)
+                special_enemy = SpecialEnemy(path_coords, special_type=special_type)  # 객체 생성
+                special_enemy.health += 50 * wave  # health_increment 적용
+                enemies.append(special_enemy)  # 적 리스트에 추가
+                print(f"특수 좀비 생성! 타입: {special_type}")
+
+
+            else:  # 일반 좀비 생성
+                enemies.append(Enemy(path_coords, health=20 + 50 * wave))
 
             enemies_spawned += 1
             last_spawn_time = current_time
@@ -710,8 +727,15 @@ def handle_wave_logic():
             else:
                 wave_pause = True
                 wave_pause_timer = pygame.time.get_ticks()
-                wave_pause_duration = 1000  # 웨이브 종료 후 5초 대기
+                gold += 100
+                wave_pause_duration = 5000  # 웨이브 종료 후 5초 대기
                 print("모든 적 제거됨. 다음 웨이브 대기 5초 시작.")
+
+    # 특수 좀비와 보스 좀비 능력 실행
+    for enemy in enemies:
+        if isinstance(enemy, SpecialEnemy) or isinstance(enemy, BossEnemy):
+            enemy.update(enemies, towers)
+
 
 def handle_tower_selection(mouse_pos):
     global selected_tower_ui
