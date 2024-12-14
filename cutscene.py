@@ -9,6 +9,7 @@ class CutsceneManager:
         self.height = height
         self.cutscenes = []  # 현재 웨이브의 컷씬 데이터를 저장
         self.current_cutscene_index = 0
+        self.on_cutscene_end = None  # 컷씬 종료 시 호출할 콜백 함수
 
     def set_font(self, font_path, size):
         """폰트를 설정하는 메서드"""
@@ -36,21 +37,6 @@ class CutsceneManager:
         except json.JSONDecodeError:
             print(f"컷씬 파일 {file_path}의 JSON 구문 오류.")
             self.cutscenes = []
-
-    def has_cutscene_for_wave(self, wave):
-        """
-        특정 웨이브에 대해 컷씬 데이터가 존재하는지 확인
-        """
-        try:
-            with open("cutscene_data.json", "r", encoding="utf-8") as f:
-                all_cutscenes = json.load(f)
-            return str(wave) in all_cutscenes  # 해당 웨이브가 컷씬 데이터에 있는지 확인
-        except FileNotFoundError:
-            print("컷씬 데이터 파일을 찾을 수 없습니다.")
-            return False
-        except json.JSONDecodeError:
-            print("컷씬 데이터 파일의 JSON 구문 오류.")
-            return False
 
     def draw_cutscene(self):
         """
@@ -87,8 +73,10 @@ class CutsceneManager:
             self.current_cutscene_index += 1
             print(f"컷씬 {self.current_cutscene_index + 1}로 이동.")
         else:
-            print("더 이상 컷씬이 없습니다.")
+            print("컷씬 종료.")
             self.cutscenes = []  # 컷씬 데이터를 초기화하여 종료 상태 설정
+            if self.on_cutscene_end:  # 종료 콜백 호출
+                self.on_cutscene_end()
 
     def is_cutscene_active(self):
         """
