@@ -18,7 +18,8 @@ def load_images():
         "side_bg_ui": pygame.transform.scale(pygame.image.load("silver_bg_ui.png"), (220, 40)),
         "bottom_bg_ui": pygame.transform.scale(pygame.image.load("gold_bg_ui.png"), (250, 40)),
         "bottom_ui": pygame.image.load("ui3.png"),
-        "basecamp":  pygame.transform.scale(pygame.image.load("basecamp.png"), (250, 300)),       
+        "basecamp":  pygame.transform.scale(pygame.image.load("basecamp.png"), (250, 300)),     
+        "the_end_bg":  pygame.transform.scale(pygame.image.load("the_end_bg.png"), (1600, 900)),
         #gun
         "gun_tower": pygame.image.load("gun_tower.png"),
         "gun_tower_lv2": pygame.image.load("gun_tower_lv2.png"),
@@ -82,5 +83,5 @@ def load_audio():
         "gun_sound": pygame.mixer.Sound("총3.mp3"),
         "mine_sound": pygame.mixer.Sound("지뢰폭발1.mp3"),
         "boss": "보스.mp3",
-
+        "end": "엔딩.mp3",
     }
